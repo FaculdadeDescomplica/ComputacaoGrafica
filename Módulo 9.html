@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Módulo 9: Rasterização e Algoritmo de Bresenham (p5.js)</title>
+    <style>
+        body {
+            margin: 0; background-color: #0f172a; color: #f8fafc; font-family: monospace;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+        }
+        #info {
+            margin-bottom: 15px; background: rgba(30, 41, 59, 0.9); padding: 15px 25px;
+            border-radius: 8px; border: 1px solid #334155; text-align: center;
+        }
+        #painel { margin-top: 12px; font-size: 13px; color: #94a3b8; text-align: center; }
+        #painel button {
+            font-family: monospace; font-size: 13px; cursor: pointer; background: #1e293b;
+            color: #f8fafc; border: 1px solid #475569; border-radius: 6px; padding: 6px 12px; margin: 0 4px;
+        }
+        #leitura { margin-top: 8px; height: 18px; }
+        canvas { border: 2px solid #334155; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Módulo 9: Algoritmo Incremental de Bresenham</h3>
+        <p>Rasterização em grade discreta usando apenas aritmética inteira e termo de erro.</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+
+    <div id="painel">
+        <button id="bPasso">Próximo pixel</button>
+        <button id="bTudo">Traçar tudo</button>
+        <button id="bReset">Recomeçar</button>
+        <div id="leitura"></div>
+    </div>
+
+    <script>
+        const escala = 25;                 // tamanho visual de cada pixel na tela
+        const x0 = 2, y0 = 2, x1 = 21, y1 = 15;   // extremos da reta, em coordenadas da grade
+
+        let acesos, estado, terminou;
+
+        function setup() {
+            const c = createCanvas(600, 600);
+            document.body.insertBefore(c.canvas, document.getElementById('painel'));
+            reiniciar();
+            noLoop();
+        }
+
+        // Prepara os valores iniciais do algoritmo, sem desenhar nada ainda
+        function reiniciar() {
+            const dx = Math.abs(x1 - x0);
+            const dy = Math.abs(y1 - y0);
+            estado = {
+                dx: dx, dy: dy,
+                sx: (x0 < x1) ? 1 : -1,
+                sy: (y0 < y1) ? 1 : -1,
+                err: dx - dy,              // termo de erro, sempre inteiro
+                x: x0, y: y0
+            };
+            acesos = [];
+            terminou = false;
+            document.getElementById('leitura').textContent = '';
+            redraw();
+        }
+
+        function draw() {
+            background(15, 23, 42);
+            desenharGrade();
+
+            // A reta ideal, aquela que a matemática descreve e o monitor não consegue mostrar
+            stroke(148, 163, 184); strokeWeight(2);
+            line(x0 * escala + escala / 2, y0 * escala + escala / 2,
+                 x1 * escala + escala / 2, y1 * escala + escala / 2);
+            noStroke();
+
+            // Os pixels que o algoritmo já acendeu
+            fill(59, 130, 246);
+            for (const p of acesos) rect(p.x * escala + 1, p.y * escala + 1, escala - 2, escala - 2);
+
+            // O pixel da vez, em destaque, para acompanhar a decisão passo a passo
+            if (!terminou) {
+                fill(0, 232, 143);
+                rect(estado.x * escala + 1, estado.y * escala + 1, escala - 2, escala - 2);
+            }
+        }
+
+        function desenharGrade() {
+            stroke(30, 41, 59); strokeWeight(1);
+            for (let i = 0; i <= width; i += escala) line(i, 0, i, height);
+            for (let j = 0; j <= height; j += escala) line(0, j, width, j);
+        }
+
+        // Um passo do algoritmo: acende o pixel atual e decide para onde ir
+        function proximoPixel() {
+            if (terminou) return;
+            const e = estado;
+
+            acesos.push({ x: e.x, y: e.y });
+
+            if (e.x === x1 && e.y === y1) {
+                terminou = true;
+                document.getElementById('leitura').textContent =
+                    'fim da reta, ' + acesos.length + ' pixels acesos, nenhuma divisão usada';
+                redraw();
+                return;
+            }
+
+            const e2 = 2 * e.err;
+            let movimento = [];
+
+            // Toda a decisão é feita com soma, subtração e comparação de inteiros
+            if (e2 > -e.dy) { e.err -= e.dy; e.x += e.sx; movimento.push('anda em X'); }
+            if (e2 <  e.dx) { e.err += e.dx; e.y += e.sy; movimento.push('anda em Y'); }
+
+            document.getElementById('leitura').textContent =
+                'erro=' + e.err + '   2*erro=' + e2 + '   ' + movimento.join(' e ') +
+                '   pixel (' + e.x + ',' + e.y + ')';
+            redraw();
+        }
+
+        document.getElementById('bPasso').onclick = proximoPixel;
+        document.getElementById('bTudo').onclick = () => { while (!terminou) proximoPixel(); };
+        document.getElementById('bReset').onclick = () => reiniciar();
+    </script>
+</body>
+</html>

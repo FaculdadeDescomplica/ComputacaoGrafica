@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Módulo 10: Preenchimento de Polígonos por Varredura (Scanline)</title>
+    <style>
+        body {
+            margin: 0; background-color: #0f172a; color: #f8fafc; font-family: monospace;
+            display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh;
+        }
+        #info {
+            margin-bottom: 15px; background: rgba(30, 41, 59, 0.9); padding: 15px 25px;
+            border-radius: 8px; border: 1px solid #334155; text-align: center;
+        }
+        #painel { margin-top: 12px; font-size: 13px; color: #94a3b8; text-align: center; }
+        #painel button {
+            font-family: monospace; font-size: 13px; cursor: pointer; background: #1e293b;
+            color: #f8fafc; border: 1px solid #475569; border-radius: 6px; padding: 6px 12px; margin: 0 4px;
+        }
+        #leitura { margin-top: 8px; height: 18px; }
+        canvas { border: 2px solid #334155; border-radius: 8px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3); }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Módulo 10: Preenchimento por Varredura e Regra Par-Ímpar</h3>
+        <p>Cada linha horizontal cruza as arestas do polígono e preenche entre pares de interseções.</p>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.js"></script>
+
+    <div id="painel">
+        <button id="bPasso">Próxima linha</button>
+        <button id="bTudo">Preencher tudo</button>
+        <button id="bReset">Recomeçar</button>
+        <div id="leitura"></div>
+    </div>
+
+    <script>
+        const escala = 25;          // tamanho de cada pixel na tela
+        let poligono;
+        let linhaAtual, linhaMin, linhaMax, preenchidos;
+
+        function setup() {
+            const c = createCanvas(600, 600);
+            c.parent(document.body);
+            document.body.insertBefore(c.canvas, document.getElementById('painel'));
+
+            // Polígono côncavo: o entalhe de cima faz a scanline cruzar quatro arestas,
+            // que é justamente o caso em que a regra par-ímpar mostra o seu valor
+            poligono = [
+                {x: 3,  y: 3},
+                {x: 8,  y: 12},
+                {x: 12, y: 3},
+                {x: 20, y: 5},
+                {x: 18, y: 20},
+                {x: 5,  y: 19}
+            ];
+            reiniciar();
+            noLoop();
+        }
+
+        function reiniciar() {
+            linhaMin = Math.min(...poligono.map(p => p.y));
+            linhaMax = Math.max(...poligono.map(p => p.y)) - 1;  // regra semiaberta: a última linha não gera cruzamento
+            linhaAtual = linhaMin;
+            preenchidos = [];
+            document.getElementById('leitura').textContent = '';
+            redraw();
+        }
+
+        function draw() {
+            background(15, 23, 42);
+            desenharGrade();
+
+            // Pixels já preenchidos pelas linhas anteriores
+            noStroke();
+            fill(59, 130, 246, 190);
+            for (const p of preenchidos) rect(p.x * escala, p.y * escala, escala, escala);
+
+            desenharArestas(poligono);
+
+            // Marca a linha de varredura que será processada a seguir
+            if (linhaAtual <= linhaMax) {
+                stroke(254, 213, 0); strokeWeight(2);
+                const y = linhaAtual * escala + escala / 2;
+                line(0, y, width, y);
+                noStroke();
+            }
+        }
+
+        function desenharGrade() {
+            stroke(30, 41, 59); strokeWeight(1);
+            for (let i = 0; i <= width; i += escala) line(i, 0, i, height);
+            for (let j = 0; j <= height; j += escala) line(0, j, width, j);
+        }
+
+        // As arestas são desenhadas no centro das células, e o preenchimento usa a célula
+        // inteira, então o deslocamento de meia célula é aplicado aqui para os dois baterem
+        function desenharArestas(poli) {
+            stroke(251, 91, 87); strokeWeight(3); noFill();
+            beginShape();
+            for (const p of poli) vertex(p.x * escala + escala / 2, p.y * escala + escala / 2);
+            endShape(CLOSE);
+            noStroke();
+        }
+
+        // Processa uma única linha de varredura e devolve as interseções encontradas
+        function varrerLinha(y) {
+            const intersecoes = [];
+            const n = poligono.length;
+
+            for (let i = 0; i < n; i++) {
+                let p1 = poligono[i];
+                let p2 = poligono[(i + 1) % n];
+                if (p1.y > p2.y) { const t = p1; p1 = p2; p2 = t; }
+
+                // Regra semiaberta: inclui o y de baixo e exclui o de cima, para que um
+                // vértice compartilhado por duas arestas conte uma vez só
+                if (p1.y !== p2.y && y >= p1.y && y < p2.y) {
+                    intersecoes.push(p1.x + (y - p1.y) * (p2.x - p1.x) / (p2.y - p1.y));
+                }
+            }
+
+            intersecoes.sort((a, b) => a - b);
+
+            // Preenche entre o primeiro e o segundo cruzamento, o terceiro e o quarto, e assim por diante
+            for (let i = 0; i + 1 < intersecoes.length; i += 2) {
+                const xIni = Math.ceil(intersecoes[i]);
+                const xFim = Math.floor(intersecoes[i + 1]);
+                for (let x = xIni; x <= xFim; x++) preenchidos.push({ x: x, y: y });
+            }
+            return intersecoes;
+        }
+
+        function proximaLinha() {
+            if (linhaAtual > linhaMax) return;
+            const cruz = varrerLinha(linhaAtual);
+            document.getElementById('leitura').textContent =
+                'linha y=' + linhaAtual + '  cruzamentos: ' +
+                cruz.map(v => v.toFixed(2)).join('  ') + '   (' + cruz.length + ', número par)';
+            linhaAtual++;
+            redraw();
+        }
+
+        document.getElementById('bPasso').onclick = proximaLinha;
+        document.getElementById('bTudo').onclick = () => { while (linhaAtual <= linhaMax) proximaLinha(); };
+        document.getElementById('bReset').onclick = () => reiniciar();
+    </script>
+</body>
+</html>

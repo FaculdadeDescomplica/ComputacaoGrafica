@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Módulo 14: Laboratório de OpenGL e WebGL (Shaders & VBOs)</title>
+    <style>
+        body { 
+            margin: 0; 
+            background-color: #0f172a; 
+            color: #f8fafc; 
+            font-family: monospace; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+        }
+        #info { 
+            margin-bottom: 15px; 
+            background: rgba(30, 41, 59, 0.9); 
+            padding: 15px 25px; 
+            border-radius: 8px; 
+            border: 1px solid #334155; 
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #334155;
+            border-radius: 8px;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+<body>
+    <div id="info">
+        <h3>Módulo 14: Pipeline Programável e Shaders (WebGL / GLSL)</h3>
+        <p>Renderização direta na GPU via VBOs e manipulação de atributos por shader.</p>
+    </div>
+
+    <!-- Canvas onde a GPU executará o contexto WebGL -->
+    <canvas id="glCanvas" width="600" height="600"></canvas>
+
+    <script>
+        // 1. Inicialização do Contexto WebGL
+        const canvas = document.getElementById('glCanvas');
+        const gl = canvas.getContext('webgl');
+
+        if (!gl) {
+            document.getElementById('info').innerHTML = '<h3>WebGL não suportado neste navegador</h3>';
+            throw new Error('WebGL não suportado');
+        }
+
+        // 2. Definição dos Shaders em GLSL
+        // Vertex Shader: Processa a posição espacial dos vértices
+        const vsSource = `
+            attribute vec2 a_position;
+            attribute vec4 a_color;
+            varying vec4 v_color;
+            uniform float u_time;
+
+            void main() {
+                // Pequena rotação interativa baseada no tempo calculada diretamente no Vertex Shader
+                float c = cos(u_time);
+                float s = sin(u_time);
+                mat2 rot = mat2(c, -s, s, c);
+                
+                vec2 rotatedPos = rot * a_position;
+                
+                gl_Position = vec4(rotatedPos, 0.0, 1.0);
+                v_color = a_color;
+            }
+        `;
+
+        // Fragment Shader: Interpola cores e decide a cor final de cada pixel rasterizado
+        const fsSource = `
+            precision mediump float;
+            varying vec4 v_color;
+
+            void main() {
+                gl_FragColor = v_color;
+            }
+        `;
+
+        // Função utilitária para compilar shaders
+        function compileShader(gl, type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                const info = gl.getShaderInfoLog(shader);
+                gl.deleteShader(shader);
+                throw new Error('Erro ao compilar shader: ' + info);
+            }
+            return shader;
+        }
+
+        const vertexShader = compileShader(gl, gl.VERTEX_SHADER, vsSource);
+        const fragmentShader = compileShader(gl, gl.FRAGMENT_SHADER, fsSource);
+
+        // Criação e linkagem do Program Shader na GPU
+        const shaderProgram = gl.createProgram();
+        gl.attachShader(shaderProgram, vertexShader);
+        gl.attachShader(shaderProgram, fragmentShader);
+        gl.linkProgram(shaderProgram);
+
+        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+            throw new Error('Erro ao linkar programa shader: ' + gl.getProgramInfoLog(shaderProgram));
+        }
+        gl.useProgram(shaderProgram);
+
+        // 3. Configuração de Buffers de Vértices (VBO - Vertex Buffer Object)
+        // Definimos a geometria de um triângulo (posições X, Y e cores R, G, B, A)
+        const vertexData = new Float32Array([
+            // Posição X, Y  |  Cor R, G, B, A
+             0.0,  0.6,     1.0, 0.23, 0.39, 1.0, // Vértice Superior (Vermelho)
+            -0.6, -0.6,     0.23, 0.51, 0.96, 1.0, // Vértice Inferior Esquerdo (Azul)
+             0.6, -0.6,     0.13, 0.77, 0.36, 1.0  // Vértice Inferior Direito (Verde)
+        ]);
+
+        const vertexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, vertexBuffer);
+        gl.bufferData(gl.ARRAY_BUFFER, vertexData, gl.STATIC_DRAW);
+
+        // Associa os dados do VBO aos atributos do Vertex Shader
+        const aPositionLocation = gl.getAttribLocation(shaderProgram, 'a_position');
+        const aColorLocation = gl.getAttribLocation(shaderProgram, 'a_color');
+        const uTimeLocation = gl.getUniformLocation(shaderProgram, 'u_time');
+
+        const stride = 6 * Float32Array.BYTES_PER_ELEMENT; // 2 floats para posição + 4 floats para cor
+
+        // Ponteiro para o atributo de posição
+        gl.enableVertexAttribArray(aPositionLocation);
+        gl.vertexAttribPointer(aPositionLocation, 2, gl.FLOAT, false, stride, 0);
+
+        // Ponteiro para o atributo de cor
+        gl.enableVertexAttribArray(aColorLocation);
+        gl.vertexAttribPointer(aColorLocation, 4, gl.FLOAT, false, stride, 2 * Float32Array.BYTES_PER_ELEMENT);
+
+        // 4. Loop de Renderização em Tempo Real (Miniaplicativo Gráfico Interativo)
+        let startTime = Date.now();
+
+        function render() {
+            let currentTime = (Date.now() - startTime) / 1000;
+
+            // Limpa o framebuffer com a cor de fundo desejada
+            gl.clearColor(0.06, 0.09, 0.16, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Envia dados dinâmicos (uniform) para a GPU
+            gl.uniform1f(uTimeLocation, currentTime);
+
+            // Renderização das primitivas geométricas via pipeline programável
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+
+            requestAnimationFrame(render);
+        }
+
+        render();
+    </script>
+</body>
+</html>
